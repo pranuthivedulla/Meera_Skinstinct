@@ -28,6 +28,7 @@ from pathlib import Path
 import feeds
 import links
 import store
+import style
 from gemini import call_model
 
 ROOT = Path(__file__).resolve().parent
@@ -80,6 +81,9 @@ def _prompt(name, **fields):
     text = (PROMPTS / name).read_text(encoding="utf-8")
     fields.setdefault("TODAY", time.strftime("%d %B %Y"))
     fields.setdefault("WINDOW", str(window_months()))
+    low, high = style.word_target()
+    fields.setdefault("WORDS_MIN", str(low))
+    fields.setdefault("WORDS_MAX", str(high))
     for key, value in fields.items():
         text = text.replace("{" + key + "}", str(value))
     missing = re.findall(r"\{([A-Z_]+)\}", text)
@@ -196,12 +200,21 @@ def revise(note_text, research_text, link_report, current_draft, instruction):
     return text
 
 
-def voice_check(draft_text, link_report):
+def style_report(draft_text):
+    """Mechanical. Counts the draft against her own published posts - no model
+    call, no opinion. Register is what a yes/no question about wording cannot
+    catch, and it is what both live drafts got wrong."""
+    post, _ = split_post(draft_text)
+    return style.report(post)
+
+
+def voice_check(draft_text, link_report, style_text):
     """Separate call, no search, and it is handed the draft only - not the
     prompt that produced it. A grader sharing the writer's instructions shares
     its blind spots."""
     text, _ = call_model(_prompt("04-voice-check.md", VOICE=voice(),
-                                 DRAFT=draft_text, LINKCHECK=link_report),
+                                 DRAFT=draft_text, LINKCHECK=link_report,
+                                 STYLE=style_text),
                          search=False)
     return text
 
@@ -294,8 +307,12 @@ def run_note(note, progress=lambda msg: None, score_row=None):
     draft_text = draft(note["text"], research_text, link_report)
     store.save_step(draft_id, "03-draft-v1", draft_text)
 
+    progress("measuring it against her published posts ...")
+    style_text = style_report(draft_text)
+    store.save_step(draft_id, "03a-style-v1", style_text)
+
     progress("checking it against her voice ...")
-    check_text = voice_check(draft_text, link_report)
+    check_text = voice_check(draft_text, link_report, style_text)
     store.save_step(draft_id, "04-voice-check-v1", check_text)
 
     store.set_status(note["id"], store.DRAFTED)
@@ -313,7 +330,10 @@ def run_revision(draft_id, version, instruction, progress=lambda msg: None):
     new_version = version + 1
     store.save_step(draft_id, f"03-draft-v{new_version}", new_text)
 
+    style_text = style_report(new_text)
+    store.save_step(draft_id, f"03a-style-v{new_version}", style_text)
+
     progress("re-checking the voice ...")
-    check_text = voice_check(new_text, link_report)
+    check_text = voice_check(new_text, link_report, style_text)
     store.save_step(draft_id, f"04-voice-check-v{new_version}", check_text)
     return new_version

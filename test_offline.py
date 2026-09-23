@@ -31,6 +31,7 @@ store.NOTES_FILE = TMP / "notes.json"
 store.STATE_FILE = TMP / "state.json"
 
 import feeds  # noqa: E402
+import style  # noqa: E402
 import gemini  # noqa: E402
 import links  # noqa: E402
 import pipeline  # noqa: E402
@@ -170,7 +171,8 @@ def test_prompts_fill():
         "01-rank.md": {"NOTES": "x", "LINKEDIN_CORPUS": "c", "NEWSLETTER_CORPUS": "n"},
         "02-research.md": {"NOTE": "x", "FEEDS": "f"},
         "03-draft.md": {"VOICE": "v", "NOTE": "n", "RESEARCH": "r", "LINKCHECK": "l"},
-        "04-voice-check.md": {"VOICE": "v", "DRAFT": "d", "LINKCHECK": "l"},
+        "04-voice-check.md": {"VOICE": "v", "DRAFT": "d", "LINKCHECK": "l",
+                              "STYLE": "s"},
         "05-revise.md": {"VOICE": "v", "NOTE": "n", "RESEARCH": "r",
                          "LINKCHECK": "l", "DRAFT": "d", "INSTRUCTION": "i"},
     }
@@ -311,7 +313,7 @@ def test_full_run():
     draft_id, version = pipeline.run_note(note)
     d = store.draft_dir(draft_id)
     for name in ("note", "01a-feed", "02-research", "02a-link-check",
-                 "03-draft-v1", "04-voice-check-v1"):
+                 "03-draft-v1", "03a-style-v1", "04-voice-check-v1"):
         check(f"{name}.md written", (d / f"{name}.md").exists())
     check("exactly three model calls: research, draft, check", len(CALLS) == 3,
           str(len(CALLS)))
@@ -366,6 +368,36 @@ def test_bot_surface():
           sum(c.count("para") for c in chunks) == long_text.count("para"))
     check("a draft is sent as a copyable block", bot.code("a < b").startswith("<pre>")
           and "&lt;" in bot.code("a < b"))
+
+
+def test_style_measurement():
+    print("\nstyle measurement (mechanical)")
+    her = (ROOT / "corpus" / "linkedin" / "linkedin_post_002.md")
+    if her.exists():
+        check("her own published post passes its own test",
+              style.failures(her.read_text(encoding="utf-8")) == [])
+    corporate = ("The implementation of the standardisation requirement "
+                 "necessitates consideration of the bioavailability "
+                 "documentation and the substantiation of every "
+                 "characterisation. ") * 8
+    off = [label for label, *_ in style.failures(corporate)]
+    check("consultancy prose is caught",
+          any("abstract" in l for l in off) and any("11 letters" in l for l in off),
+          str(off))
+    m = style.measure("Short one. This sentence is a great deal longer than "
+                      "the first one was, by some margin indeed.")
+    check("sentences are counted", m["sentences"] == 2)
+    check("short sentences are counted", m["short_pct"] == 50.0)
+    check("a [DATA NEEDED] gap does not inflate the word count",
+          style.measure("a [DATA NEEDED: x] b")["words"] == 3)
+    os.environ["TARGET_WORDS_MIN"], os.environ["TARGET_WORDS_MAX"] = "300", "450"
+    check("the word target is a setting, not taken from her corpus",
+          style.word_target() == (300, 450))
+    rows, _ = style.compare("word " * 600)
+    check("over the word target is TOO HIGH",
+          any(k == "words" and v == "TOO HIGH" for k, _, _, _, v in rows))
+    check("no corpus means no invented range",
+          style.bands() is not None)
 
 
 def test_voice_notes():
@@ -431,6 +463,7 @@ if __name__ == "__main__":
         test_link_check()
         test_full_run()
         test_bot_surface()
+        test_style_measurement()
         test_voice_notes()
         test_no_linkedin_posting()
     finally:

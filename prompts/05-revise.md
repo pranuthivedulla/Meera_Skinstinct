@@ -39,6 +39,11 @@ Rules:
    two sentences, with the recency visible. Unless she has asked you to change
    the opening, leave it alone.
 4. Never invent a figure, a quote, a study or a source.
+5. Register, which is where the last drafts failed: fewer than one word in
+   twenty ending -tion/-ment/-ity, fewer than one in twelve of 11+ letters,
+   and at least one sentence in five of eight words or fewer. Say what
+   happens rather than naming the happening. Keep it {WORDS_MIN}-{WORDS_MAX}
+   words.
 
 Output EXACTLY these two sections and nothing else:
 

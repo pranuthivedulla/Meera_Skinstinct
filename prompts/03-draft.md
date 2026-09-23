@@ -47,7 +47,37 @@ note, the research, and a mechanical check of every link the research cited.
    reasoning rather than citing, say so.
 4. This is LinkedIn: no greeting, no sign-off, no "Hi", no "Meera" at the end,
    no headers, no bullets in the body, no hashtags, no emoji.
-5. 350 to 550 words, 7 to 12 paragraphs.
+5. {WORDS_MIN} to {WORDS_MAX} words, 7 to 12 paragraphs. Shorter than her
+   published posts, deliberately - her instruction, 23 September 2026.
+
+5b. REGISTER. Two live drafts came back reading like a consultancy report.
+   Measured against her four published posts, the difference was not sentence
+   length - it was abstraction:
+
+       her posts                       those drafts
+       abstract nouns  1.4-4.3%        7.3% and 6.2%
+       words of 11+ letters 3.7-8.3%   10.8% and 9.6%
+       sentences of 8 words or fewer 21-35%   19% and 14%
+
+   So, concretely:
+   - Fewer than one word in twenty may end in -tion, -ment, -ity, -ance or
+     -isation. Say what happens, do not name the happening. "The pH drifts"
+     rather than "pH destabilisation occurs".
+   - Fewer than one word in twelve may be 11 letters or longer. Ingredient
+     names are exempt; "bioavailability", "thermodynamic" and "substantiated"
+     are not.
+   - At least one sentence in five must be eight words or fewer. Long
+     explanation, then a short flat verdict, is her basic rhythm.
+
+   Wrong: "Topical efficacy is governed by chemical thermodynamics and
+   transdermal flux, which require an active ingredient to exist at a
+   validated minimum effective concentration within an appropriate carrier
+   vehicle."
+   Right: "For an active to work, enough of it has to get through the skin,
+   and it has to still be intact when it gets there. The label cannot tell
+   you either one."
+
+   Write for a founder reading on her phone, not for a journal.
 
 5a. THE POST MUST OPEN ON THE INDUSTRY HOOK. Her instruction, 23 September
    2026. The FIRST TWO SENTENCES must carry the current, dated fact from the

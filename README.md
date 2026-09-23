@@ -74,7 +74,8 @@ python test_offline.py
 2  RESEARCH      the current web, starting from the feed                        search on
 2a LINK CHECK    every cited URL fetched for real                               no model call
 3  DRAFT         her voice, spending the research                               no search
-4  VOICE CHECK   17 yes/no questions: her checklist, plus hook and dates        no search
+3a STYLE         counted against her published posts             mechanical, no model call
+4  VOICE CHECK   18 yes/no questions: her checklist, hook, dates, style       no search
 5  REVISE        only what she asked to change, then re-checked                 no search
 ```
 
@@ -103,6 +104,16 @@ Five design decisions worth knowing before changing anything:
 **Drafting and checking are two separate calls.** The checker is handed the
 draft and the link report, never the prompt that produced the draft. A grader
 sharing the writer's instructions shares its blind spots.
+
+**The style check is a measurement too.** Two live drafts came back reading
+like a consultancy report, and the voice checker had passed one of them on 13
+of 15 questions - register is not something a yes/no question about wording
+catches. Measuring her four published posts against those drafts found it
+exactly: same sentence length, but **twice the abstract nouns** (7.3% and 6.2%
+against her 1.4-4.3%), more long words, fewer short flat sentences. `style.py`
+counts those on every draft, computing her range from `corpus/linkedin/` at
+runtime so the target moves as she publishes. Her own posts pass it; that is
+the control.
 
 **The link check is a measurement, and it outranks the research.** The research
 step reports its own sources; this step opens them. A claim whose only source
@@ -163,7 +174,8 @@ store.py            notes and drafts as files on disk
 prompts/            one file per step
 voice/              her voice specification, 15 published pieces distilled
 data/               notes.json, state.json, drafts/ — gitignored, never committed
-test_offline.py     80 checks, every model call stubbed
+style.py            register measured against her own posts, no model call
+test_offline.py     92 checks, every model call stubbed
 ```
 
 Every step of every draft is written to disk as it completes, so when a draft

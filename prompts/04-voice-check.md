@@ -18,8 +18,17 @@ why in the evidence column.
 
 {LINKCHECK}
 
-Questions 16 and 17 are hers, added 23 September 2026, and are not in the
-voice specification above. Check them the same way: YES or NO, with evidence.
+=== STYLE MEASUREMENT (mechanical, counted from the draft) ===
+
+{STYLE}
+
+This measurement is counting, not opinion. Where it disagrees with your own
+impression of the draft, the measurement is right. Question 18 is decided by
+it alone.
+
+Questions 16, 17 and 18 are hers, added 23 September 2026, and are not in
+the voice specification above. 18 is answered from the measurement, not from
+reading. Check them the same way: YES or NO, with evidence.
 
 Output EXACTLY this:
 
@@ -40,10 +49,11 @@ Output EXACTLY this:
 | 11 | Does it end with one question the reader can ask any brand? | | quote it |
 | 12 | Is it free of exclamation marks, hype words, reader-directed questions and competitor names? | | name any found |
 | 13 | Is it British spelling throughout? | | name any American spelling |
-| 14 | Is it 350-550 words and 7-12 paragraphs with no headers or bullets in the body? | | give the word and paragraph count |
+| 14 | Is it {WORDS_MIN}-{WORDS_MAX} words and 7-12 paragraphs with no headers or bullets in the body? | | take the word count from the STYLE MEASUREMENT below, do not count yourself |
 | 15 | Is it free of a greeting and a sign-off, as LinkedIn requires? | | |
 | 16 | Do the first two sentences open on a CURRENT, DATED industry fact, with the recency visible in the text? | | quote the first two sentences and name the date |
 | 17 | Is every dated figure inside the research window, or is its age stated in the sentence that uses it? | | name any that is not |
+| 18 | Does the style measurement show every metric in range? | | copy the OUT OF RANGE line, or say every measure is in range |
 
 ## Verdict
 

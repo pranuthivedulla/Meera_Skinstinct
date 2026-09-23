@@ -38,6 +38,7 @@ from pathlib import Path
 
 import pipeline
 import store
+import style
 from gemini import ModelError
 
 ROOT = Path(__file__).resolve().parent
@@ -212,7 +213,17 @@ def deliver(chat_id, draft_id, version):
     send(chat_id, code(post))
 
     gaps = pipeline.placeholders(post)
-    tail = [f"<b>Voice check: {verdict}</b>"]
+    tail = []
+
+    # Measured, not judged: her own published posts set the range.
+    off = style.failures(post)
+    if off:
+        tail.append("<b>Reads unlike her on:</b>")
+        for label, value, low, high, sense in off:
+            tail.append(f"  {label}: <b>{value:.1f}</b> vs her {low:.1f}-{high:.1f}"
+                        f" ({sense.lower()})")
+        tail.append("")
+    tail.append(f"<b>Voice check: {verdict}</b>")
     rows = pipeline.failed_checks(check)
     if rows:
         # A bare "failed checks: 6, 9" makes her go and look up what 6 is.
