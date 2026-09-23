@@ -2,3 +2,8 @@
 data/
 __pycache__/
 *.pyc
+
+# Her published pieces, imported from the seed-data PDF by import_corpus.py.
+# Her writing, not this project's code - kept local rather than republished
+# through this repo. The bot needs it; git does not.
+corpus/

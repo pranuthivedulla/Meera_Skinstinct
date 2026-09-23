@@ -30,6 +30,7 @@ store.DRAFTS = TMP / "drafts"
 store.NOTES_FILE = TMP / "notes.json"
 store.STATE_FILE = TMP / "state.json"
 
+import feeds  # noqa: E402
 import gemini  # noqa: E402
 import links  # noqa: E402
 import pipeline  # noqa: E402
@@ -47,17 +48,17 @@ def check(name, condition, detail=""):
 
 CALLS = []
 
-RANKING = """## Ranking
+SCORING = """## Scores
 
-| Rank | Note | Verdict | Why |
-|---|---|---|---|
-| 1 | NOTE 2 | POSTABLE | names a specific SPF testing figure, test 1 |
-| 2 | NOTE 1 | NOT POSTABLE | fails test 4, needs our own return rate |
-| 3 | NOTE 99 | POSTABLE | a note that does not exist |
+| Note | Score | A | B | C | Reason |
+|---|---|---|---|---|---|
+| NOTE 2 | 4 | YES | YES | THIN | emotion named, misconception only half-stated |
+| NOTE 1 | 2 | NO | YES | NO | restates linkedin_post_001 on niacinamide |
+| NOTE 99 | 5 | YES | YES | YES | a note that does not exist |
 
-## What the top note needs
+## Corpus note
 
-Public reapplication data.
+Checked against 4 LinkedIn posts.
 """
 
 RESEARCH = """## What is current
@@ -113,8 +114,8 @@ The dead source.
 
 def fake_call(prompt, search=True, **kw):
     CALLS.append({"search": search, "prompt": prompt})
-    if "ranking a founder" in prompt:
-        return RANKING, {}
+    if "scoring a founder" in prompt:
+        return SCORING, {}
     if "You are researching ONE note" in prompt:
         return RESEARCH, {"https://example.com/standard": "A standard"}
     if "checking a draft against a voice specification" in prompt:
@@ -136,6 +137,14 @@ def fake_check_link(url, timeout=None):
     return {"url": url, "state": "LOADS", "code": 200, "date": "2026-04-01", "note": ""}
 
 
+def fake_gather(note_text, days=180):
+    """No network. The real fetch is exercised by hand, not by this suite -
+    a test that depends on what Google News happens to be carrying today is a
+    test that fails for reasons that are nothing to do with this code."""
+    return ([{"title": "A real article", "link": "https://pub.example/a",
+              "date": "2026-09-01", "source": "The Hindu", "citable": True}], [])
+
+
 SENT = []
 
 
@@ -147,6 +156,7 @@ pipeline.call_model = fake_call
 REAL_CHECK_LINK = links.check_link   # kept so the skip rule can be tested for real
 links.check_link = fake_check_link
 bot.send = fake_send
+feeds.gather = fake_gather
 pipeline.VOICE_FILE = ROOT / "voice" / "meera-pillai-voice.md"
 
 
@@ -157,8 +167,8 @@ def test_prompts_fill():
     check("voice file is present and non-trivial",
           pipeline.VOICE_FILE.exists() and len(pipeline.voice()) > 10_000)
     every = {
-        "01-rank.md": {"NOTES": "x"},
-        "02-research.md": {"NOTE": "x"},
+        "01-rank.md": {"NOTES": "x", "LINKEDIN_CORPUS": "c", "NEWSLETTER_CORPUS": "n"},
+        "02-research.md": {"NOTE": "x", "FEEDS": "f"},
         "03-draft.md": {"VOICE": "v", "NOTE": "n", "RESEARCH": "r", "LINKCHECK": "l"},
         "04-voice-check.md": {"VOICE": "v", "DRAFT": "d", "LINKCHECK": "l"},
         "05-revise.md": {"VOICE": "v", "NOTE": "n", "RESEARCH": "r",
@@ -172,18 +182,72 @@ def test_prompts_fill():
         except Exception as e:  # noqa: BLE001
             check(f"{name} fills with no placeholder left", False, str(e))
     check("the window is substituted, not hardcoded",
-          f"{pipeline.window_months()} months" in pipeline._prompt("02-research.md", NOTE="x"))
+          f"{pipeline.window_months()} months" in
+          pipeline._prompt("02-research.md", NOTE="x", FEEDS="f"))
 
 
-def test_ranking_parser():
-    print("\nranking parser")
-    rows = pipeline.parse_ranking(RANKING, {1, 2})
+def test_score_parser():
+    print("\nscore parser")
+    rows = pipeline.parse_scores(SCORING, {1, 2})
     check("reads two real rows", len(rows) == 2, str(rows))
-    check("top row is note 2 and POSTABLE", rows[0][0] == 2 and rows[0][1] is True)
-    check("NOT POSTABLE is not read as POSTABLE", rows[1][1] is False)
-    check("an invented NOTE 99 is dropped", all(r[0] != 99 for r in rows))
+    check("highest score first", [r["score"] for r in rows] == [4, 2])
+    check("the three parameter columns are kept",
+          rows[0]["a"] == "YES" and rows[0]["c"] == "THIN")
+    check("the one-line reason is kept", "half-stated" in rows[0]["reason"])
+    check("an invented NOTE 99 is dropped", all(r["id"] != 99 for r in rows))
     check("a table it cannot read returns nothing, rather than guessing",
-          pipeline.parse_ranking("no table here", {1, 2}) == [])
+          pipeline.parse_scores("no table here", {1, 2}) == [])
+
+
+def test_threshold():
+    print("\nthreshold (applied in code, not by the model)")
+    rows = pipeline.parse_scores(SCORING, {1, 2})
+    os.environ["MIN_SCORE_TO_DRAFT"] = "3"
+    drafted, rejected = pipeline.decide(rows)
+    check("4 of 5 is drafted", [r["id"] for r in drafted] == [2])
+    check("2 of 5 is rejected, with its reason kept for the message back",
+          [r["id"] for r in rejected] == [1] and rejected[0]["reason"])
+    os.environ["MIN_SCORE_TO_DRAFT"] = "5"
+    check("raising the threshold rejects everything", pipeline.decide(rows)[0] == [])
+    os.environ["MIN_SCORE_TO_DRAFT"] = "3"
+    check("exactly 3 drafts rather than falling in the gap",
+          pipeline.decide([{"id": 9, "score": 3, "a": "YES", "b": "YES",
+                            "c": "NO", "reason": "x"}])[0] != [])
+
+
+def test_corpus():
+    print("\ncorpus")
+    linkedin, n_li = pipeline.corpus("linkedin")
+    news, n_nl = pipeline.corpus("newsletters")
+    check("her LinkedIn posts are loaded", n_li >= 4, str(n_li))
+    check("her newsletters are loaded", n_nl >= 11, str(n_nl))
+    check("the two are kept apart", linkedin != news)
+    check("a missing corpus says so rather than passing silently",
+          "guess" in pipeline.corpus("nonexistent")[0])
+    prompt = pipeline._prompt("01-rank.md", NOTES="n", LINKEDIN_CORPUS=linkedin,
+                              NEWSLETTER_CORPUS=news)
+    check("only LinkedIn posts constrain novelty, per her decision",
+          "ONLY those" in prompt and "do NOT constrain" in prompt)
+    check("the real corpus reaches the prompt", "niacinamide" in prompt.lower())
+
+
+def test_feeds():
+    print("\nfeeds (parsing only, no network)")
+    rss = b"""<?xml version="1.0"?><rss version="2.0"><channel>
+    <item><title>A real article</title><link>https://pub.example/a</link>
+    <pubDate>Mon, 01 Sep 2026 10:00:00 GMT</pubDate><source>The Hindu</source></item>
+    </channel></rss>"""
+    items = feeds._items(rss, citable=True)
+    check("an RSS item is parsed", len(items) == 1)
+    check("its date comes from the feed, not a model", items[0]["date"] == "2026-09-01")
+    check("a direct feed item is citable", items[0]["citable"] is True)
+    google = feeds._items(rss, citable=False)
+    check("a Google News item is marked lead-only", google[0]["citable"] is False)
+    report = feeds.report(google, ["somefeed: URLError down"], 180)
+    check("the report forbids citing a lead", "Do not cite it" in report)
+    check("a feed that is down is reported, not hidden", "URLError" in report)
+    check("keywords drop stopwords",
+          "the" not in feeds.keywords("the sunscreen is the problem"))
 
 
 def test_verdict_parser():
@@ -238,11 +302,13 @@ def test_full_run():
     note = store.add_note("SPF is tested at a density nobody applies", 1)
     draft_id, version = pipeline.run_note(note)
     d = store.draft_dir(draft_id)
-    for name in ("note", "02-research", "02a-link-check", "03-draft-v1",
-                 "04-voice-check-v1"):
+    for name in ("note", "01a-feed", "02-research", "02a-link-check",
+                 "03-draft-v1", "04-voice-check-v1"):
         check(f"{name}.md written", (d / f"{name}.md").exists())
     check("exactly three model calls: research, draft, check", len(CALLS) == 3,
           str(len(CALLS)))
+    check("the feed step is mechanical - it spends no model call",
+          (d / "01a-feed.md").exists())
     check("only the research call may search",
           [c["search"] for c in CALLS] == [True, False, False])
     check("the drafting call is handed the link check",
@@ -294,6 +360,44 @@ def test_bot_surface():
           and "&lt;" in bot.code("a < b"))
 
 
+def test_voice_notes():
+    print("\nvoice notes")
+    import json as _json
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["body"] = _json.loads(req.data.decode("utf-8"))
+        raise gemini.ModelError("stopped before the network")
+
+    real = gemini.urllib.request.urlopen
+    gemini.urllib.request.urlopen = fake_urlopen
+    os.environ.setdefault("GEMINI_API_KEY", "test-key-not-real")
+    try:
+        gemini.call_model("transcribe this", search=False,
+                          audio=(b"fake ogg bytes", "audio/ogg"))
+    except gemini.ModelError:
+        pass
+    finally:
+        gemini.urllib.request.urlopen = real
+
+    body = captured.get("body", {})
+    parts = body.get("input")
+    check("audio makes input a list of parts, not a string", isinstance(parts, list))
+    check("the prompt goes first as text",
+          parts and parts[0].get("type") == "text")
+    check("the audio part carries a mime type Telegram actually sends",
+          parts and parts[1].get("mime_type") == "audio/ogg")
+    check("the audio is base64, not raw bytes",
+          parts and isinstance(parts[1].get("data"), str))
+    check("transcription never turns search on", "tools" not in body)
+
+    prompt = pipeline._prompt("00-transcribe.md")
+    check("the transcriber is told not to guess an ingredient name",
+          "[unclear]" in prompt)
+    check("silence has a defined answer, so it cannot invent one",
+          "NO SPEECH" in prompt)
+
+
 def test_no_linkedin_posting():
     print("\nboundaries")
     source = "\n".join((ROOT / f).read_text(encoding="utf-8")
@@ -310,12 +414,16 @@ def test_no_linkedin_posting():
 if __name__ == "__main__":
     try:
         test_prompts_fill()
-        test_ranking_parser()
+        test_score_parser()
+        test_threshold()
+        test_corpus()
+        test_feeds()
         test_verdict_parser()
         test_post_split()
         test_link_check()
         test_full_run()
         test_bot_surface()
+        test_voice_notes()
         test_no_linkedin_posting()
     finally:
         shutil.rmtree(TMP, ignore_errors=True)

@@ -7,6 +7,17 @@ The note:
 
 {NOTE}
 
+An industry feed has already been fetched mechanically for this note. The
+dates below come from the feeds themselves, not from a model, so they are
+facts. Start here, then search beyond it.
+
+{FEEDS}
+
+A row marked CITABLE is the publisher's own article URL - cite it directly. A
+row marked LEAD ONLY is a Google News redirect, which is not a real article
+address: use it as a lead, find the publisher's own page, and cite that. Never
+put a news.google.com link in your output.
+
 Search the public web and find what is CURRENT about this. You are looking for
 one or more of:
 - a news event or regulatory change (a rule, a deadline, an enforcement action)
@@ -30,6 +41,9 @@ Hard rules:
 5. Indian market data is more relevant than global data where both exist, since
    her audience is the Indian skincare market. Report both if you have both.
 6. Do not recommend an angle or write any sentence in her voice.
+7. The feed above is a starting point, not a limit, and not an endorsement -
+   beauty news is mostly listicles and press releases. A feed row you cannot
+   stand behind should be ignored, not reported.
 
 Output EXACTLY these sections:
 

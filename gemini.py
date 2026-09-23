@@ -6,6 +6,7 @@ calling sys.exit. A long-running bot must survive a bad call and tell her
 about it, not die in the middle of the night.
 """
 
+import base64
 import json
 import os
 import time
@@ -23,11 +24,22 @@ def model_name():
     return os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
 
 
-def call_model(prompt, search=True, retries=3, timeout=300):
+def call_model(prompt, search=True, retries=3, timeout=300, audio=None):
     """Returns (text, citations). `search=False` turns grounding off for the
-    steps that must reason only about text they were handed - ranking and the
-    voice checklist. A grader that can search is a grader that can wander."""
+    steps that must reason only about text they were handed - scoring and the
+    voice checklist. A grader that can search is a grader that can wander.
+
+    `audio` is (bytes, mime_type) for a voice note. The Interactions API takes
+    `input` as either a string or a list of content parts, and audio/ogg and
+    audio/opus - what Telegram sends - are both supported types."""
     payload = {"model": model_name(), "input": prompt}
+    if audio is not None:
+        data, mime = audio
+        payload["input"] = [
+            {"type": "text", "text": prompt},
+            {"type": "audio", "data": base64.b64encode(data).decode("ascii"),
+             "mime_type": mime},
+        ]
     if search:
         payload["tools"] = [{"type": "google_search"}]
     body = json.dumps(payload).encode("utf-8")

@@ -9,8 +9,10 @@ runs while this script runs. Standard library only.
 What it does with a message:
 
     plain text        saved as a note. Nothing is spent. Nothing is drafted.
-    /draft            ranks every open note, says which can become a post and
-                      why, then researches and drafts the top one.
+    a voice note      transcribed by Gemini, shown to her, then saved as a note.
+    /draft            scores every open note 0-5 against her three
+                      parameters, sends a reason back for anything below the
+                      threshold, then researches and drafts the top one.
     /draft 7          skips the ranking and drafts note 7.
     /notes            lists the open notes.
     /skip 3           takes note 3 out of the ranking.
@@ -135,7 +137,9 @@ HELP = """What I do with what you send me.
 
 <b>Just type a note</b> - a sentence or a paragraph. I save it. Nothing is spent and nothing is drafted until you ask.
 
-<b>/draft</b> - I rank every open note, tell you which ones can become a post and why the rest cannot, then research and draft the top one.
+<b>Or send a voice note</b> - I transcribe it, show you the transcript so you can check the ingredient names, and save that as the note.
+
+<b>/draft</b> - I score every open note out of 5 against three things: is it a new angle you have not posted on LinkedIn before, does it name an emotion, does it correct a common misconception. Anything below 3 gets a short message saying why, and no draft. The top note above the line gets researched and written.
 <b>/draft 7</b> - skip the ranking, draft note 7.
 <b>/notes</b> - the open notes.
 <b>/skip 3</b> - take note 3 out of the ranking.
@@ -173,6 +177,26 @@ def cmd_skip(chat_id, arg):
         return
     store.set_status(note_id, store.SKIPPED)
     send(chat_id, f"Note {note_id} is out of the ranking.")
+
+
+def score_summary(rows, n_linkedin):
+    """One line per note. The three columns are her three parameters, so a
+    score always arrives with what produced it."""
+    cut = pipeline.draft_threshold()
+    lines = ["<b>Scores</b>  (new angle / emotion named / misconception)", ""]
+    for r in rows:
+        mark = "→ draft" if r["score"] >= cut else "rejected"
+        lines.append(f"<b>{r['score']}/5</b> note {r['id']} — {r['a']}/{r['b']}/{r['c']}"
+                     f" — {mark}")
+        lines.append(f"    <i>{html.escape(r['reason'])}</i>")
+    lines.append("")
+    if n_linkedin:
+        lines.append(f"Novelty checked against {n_linkedin} published LinkedIn "
+                     f"post(s). Newsletters do not count against it.")
+    else:
+        lines.append("No LinkedIn posts in corpus/ — the new-angle column is a "
+                     "guess. Run import_corpus.py.")
+    return "\n".join(lines)
 
 
 def deliver(chat_id, draft_id, version):
@@ -213,30 +237,54 @@ def cmd_draft(chat_id, arg):
             send(chat_id, f"No note {note_id}.")
             return
         send(chat_id, f"Drafting note {note_id}, skipping the ranking.")
+        row = None
     else:
         notes = store.open_notes()
         if not notes:
-            send(chat_id, "No open notes to rank. Send me one first.")
+            send(chat_id, "No open notes to score. Send me one first.")
             return
-        send(chat_id, f"Ranking {len(notes)} note(s). Nothing is drafted yet.")
-        ranking = pipeline.rank(notes)
-        rows = pipeline.parse_ranking(ranking, {n["id"] for n in notes})
-        send(chat_id, html.escape(ranking))
-
-        postable = [r for r in rows if r[1]]
+        cut = pipeline.draft_threshold()
+        send(chat_id, f"Scoring {len(notes)} note(s) out of 5. Nothing is "
+                      f"drafted below {cut}.")
+        scoring, n_linkedin = pipeline.score(notes)
+        rows = pipeline.parse_scores(scoring, {n["id"] for n in notes})
         if not rows:
-            send(chat_id, "I could not read the ranking table back. Nothing "
-                          "drafted. Try /draft &lt;number&gt; to pick one yourself.")
+            send(chat_id, "I could not read the score table back. Nothing "
+                          "drafted. /draft &lt;number&gt; picks one yourself.")
             return
-        if not postable:
-            send(chat_id, "None of these clears the bar yet. Nothing drafted, "
-                          "nothing spent. /draft &lt;number&gt; overrides me.")
-            return
-        note = store.get_note(postable[0][0])
-        send(chat_id, f"Taking note {note['id']}. /draft &lt;number&gt; if you "
-                      f"wanted a different one.")
 
-    draft_id, version = pipeline.run_note(note, progress=lambda m: send(chat_id, m))
+        drafted, rejected = pipeline.decide(rows)
+        send(chat_id, score_summary(rows, n_linkedin))
+
+        # Every rejected note gets its own line back, with the reason. A note
+        # that scores 2 and is never mentioned again looks like a note that
+        # was lost.
+        for r in rejected:
+            note = store.get_note(r["id"])
+            store.set_status(r["id"], store.SKIPPED)
+            send(chat_id, f"<b>Note {r['id']} scored {r['score']}/5 - no draft.</b>\n"
+                          f"{html.escape(r['reason'])}\n\n"
+                          f"New angle: {r['a']} | Emotion named: {r['b']} | "
+                          f"Misconception: {r['c']}\n\n"
+                          f"<i>{html.escape((note['text'] if note else '')[:200])}</i>\n\n"
+                          f"/draft {r['id']} drafts it anyway.")
+        if not drafted:
+            send(chat_id, f"Nothing scored {pipeline.draft_threshold()} or "
+                          f"above. No research call was made, so nothing was "
+                          f"spent on drafting.")
+            return
+
+        row = drafted[0]
+        note = store.get_note(row["id"])
+        if len(drafted) > 1:
+            others = ", ".join(f"{r['id']} ({r['score']}/5)" for r in drafted[1:])
+            send(chat_id, f"Taking note {row['id']} at {row['score']}/5. Also "
+                          f"above the line: {others}. /draft &lt;number&gt; for those.")
+        else:
+            send(chat_id, f"Taking note {row['id']} at {row['score']}/5.")
+
+    draft_id, version = pipeline.run_note(note, progress=lambda m: send(chat_id, m),
+                                          score_row=row)
     store.set_current(chat_id, draft_id, version)
     deliver(chat_id, draft_id, version)
 
@@ -288,17 +336,60 @@ def cmd_approve(chat_id):
 
 # --- dispatch ---------------------------------------------------------------
 
+def download_file(file_id):
+    """Telegram keeps the file; getFile gives a path, and the path is fetched
+    from a different host to the API itself."""
+    info = api("getFile", file_id=file_id)
+    path = info["file_path"]
+    token = os.environ["TELEGRAM_BOT_TOKEN"]
+    url = f"https://api.telegram.org/file/bot{token}/{path}"
+    with urllib.request.urlopen(url, timeout=120) as r:
+        return r.read()
+
+
+def voice_note_text(chat_id, message):
+    """A voice note or an audio file becomes text, then it is an ordinary
+    note. Returns None if there was nothing to transcribe."""
+    media = message.get("voice") or message.get("audio")
+    mime = media.get("mime_type") or "audio/ogg"
+    seconds = media.get("duration", 0)
+    send(chat_id, f"Voice note, {seconds}s. Transcribing ...")
+    try:
+        audio = download_file(media["file_id"])
+    except Exception as e:  # noqa: BLE001
+        send(chat_id, f"Could not download the audio: {html.escape(str(e))[:200]}")
+        return None
+    text = pipeline.transcribe(audio, mime)
+    if not text or text.strip().upper() == "NO SPEECH":
+        send(chat_id, "I could not hear any speech in that.")
+        return None
+    # She sees the transcript before it is saved, because an ingredient name
+    # heard wrong becomes a post built on the wrong ingredient.
+    send(chat_id, "<b>Transcript</b>\n" + html.escape(text))
+    return text
+
+
 def handle(message):
     chat_id = message["chat"]["id"]
     user = message.get("from", {})
-    text = (message.get("text") or "").strip()
-    if not text:
-        send(chat_id, "Text only for now - I cannot read photos or voice notes.")
-        return
 
     if not allowed(user.get("id")):
         send(chat_id, "Not an allowed user.")
         print(f"rejected user {user.get('id')} ({user.get('username')})", flush=True)
+        return
+
+    text = (message.get("text") or "").strip()
+    if not text and (message.get("voice") or message.get("audio")):
+        text = voice_note_text(chat_id, message) or ""
+        if not text:
+            return
+        note = store.add_note(text, chat_id)
+        send(chat_id, f"Noted as <b>{note['id']}</b> from the voice note. "
+                      f"{len(store.open_notes())} open. Correct it by sending "
+                      f"the fixed version as text, then /skip {note['id']}.")
+        return
+    if not text:
+        send(chat_id, "I can read text and voice notes. Not photos or videos.")
         return
 
     command, _, arg = text.partition(" ")
