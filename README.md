@@ -74,7 +74,7 @@ python test_offline.py
 2  RESEARCH      the current web, starting from the feed                        search on
 2a LINK CHECK    every cited URL fetched for real                               no model call
 3  DRAFT         her voice, spending the research                               no search
-4  VOICE CHECK   15 yes/no questions against her own checklist                  no search
+4  VOICE CHECK   17 yes/no questions: her checklist, plus hook and dates        no search
 5  REVISE        only what she asked to change, then re-checked                 no search
 ```
 
@@ -119,8 +119,11 @@ reasons to pass.
 number and a reason; `decide()` acts on it. A model asked to both score and
 decide drifts its scores to match the decision it already made.
 
-**The voice check is still yes/no.** PASS or FAIL on 15 questions, never a
-score.
+**The voice check is still yes/no.** PASS or FAIL on 17 questions, never a
+score. 15 come from her voice specification; 16 and 17 are hers, added 23
+September 2026 - the post must OPEN on a current dated industry fact with the
+recency visible, and every dated figure must be inside the window or say how
+old it is.
 
 **On the 0-5 note score, I disagreed and was overruled.** `CLAUDE.md` in the
 sibling project says grading is yes/no and records that a 1-5 rubric was tried

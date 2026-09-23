@@ -18,6 +18,9 @@ why in the evidence column.
 
 {LINKCHECK}
 
+Questions 16 and 17 are hers, added 23 September 2026, and are not in the
+voice specification above. Check them the same way: YES or NO, with evidence.
+
 Output EXACTLY this:
 
 ## Voice check
@@ -39,6 +42,8 @@ Output EXACTLY this:
 | 13 | Is it British spelling throughout? | | name any American spelling |
 | 14 | Is it 350-550 words and 7-12 paragraphs with no headers or bullets in the body? | | give the word and paragraph count |
 | 15 | Is it free of a greeting and a sign-off, as LinkedIn requires? | | |
+| 16 | Do the first two sentences open on a CURRENT, DATED industry fact, with the recency visible in the text? | | quote the first two sentences and name the date |
+| 17 | Is every dated figure inside the research window, or is its age stated in the sentence that uses it? | | name any that is not |
 
 ## Verdict
 

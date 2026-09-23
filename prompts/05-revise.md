@@ -35,6 +35,9 @@ Rules:
 3. Every rule in the voice specification still applies to the result,
    including the word count, the single closing question, no greeting, no
    sign-off, British spelling and zero exclamation marks.
+3a. The post must still OPEN on the current, dated industry fact in its first
+   two sentences, with the recency visible. Unless she has asked you to change
+   the opening, leave it alone.
 4. Never invent a figure, a quote, a study or a source.
 
 Output EXACTLY these two sections and nothing else:
