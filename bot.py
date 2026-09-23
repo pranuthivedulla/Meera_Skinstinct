@@ -1,0 +1,406 @@
+#!/usr/bin/env python3
+"""Telegram bot: her notes in, a LinkedIn post out.
+
+Long polling, so there is no public URL, no webhook and nothing to deploy. It
+runs while this script runs. Standard library only.
+
+    python bot.py
+
+What it does with a message:
+
+    plain text        saved as a note. Nothing is spent. Nothing is drafted.
+    /draft            ranks every open note, says which can become a post and
+                      why, then researches and drafts the top one.
+    /draft 7          skips the ranking and drafts note 7.
+    /notes            lists the open notes.
+    /skip 3           takes note 3 out of the ranking.
+    /revise <what>    a new version of the current draft.
+    /approve          writes the final text to disk and prints it clean.
+    /post             prints the current draft again, on its own, to copy.
+    /whoami           the Telegram user id, for ALLOWED_USER_IDS.
+
+It never posts to LinkedIn. It hands her text; she posts it.
+"""
+
+import html
+import json
+import os
+import sys
+import threading
+import time
+import traceback
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+import pipeline
+import store
+from gemini import ModelError
+
+ROOT = Path(__file__).resolve().parent
+POLL_TIMEOUT = 50          # seconds Telegram holds the long poll open
+TELEGRAM_LIMIT = 3500      # real limit is 4096; leave room for our wrapper
+
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    # Windows consoles default to cp1252 and crash on a rupee sign.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
+# --- .env -------------------------------------------------------------------
+
+def load_env():
+    """A five-line dotenv. Real environment variables win, so a key exported
+    in the shell is not silently overridden by a stale file."""
+    path = ROOT / ".env"
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+# --- Telegram ---------------------------------------------------------------
+
+def api(method, **params):
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not token:
+        raise SystemExit("TELEGRAM_BOT_TOKEN is not set. Copy .env.example to "
+                         ".env and paste the token from @BotFather.")
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    body = json.dumps(params).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST",
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=POLL_TIMEOUT + 15) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    if not data.get("ok"):
+        raise RuntimeError(f"telegram {method}: {data}")
+    return data.get("result")
+
+
+def send(chat_id, text, plain=False):
+    """Telegram caps a message at 4096 characters, and a post plus its sources
+    goes past that. Split on blank lines so a paragraph is never cut."""
+    for chunk in _chunks(text):
+        params = {"chat_id": chat_id, "text": chunk,
+                  "disable_web_page_preview": True}
+        if not plain:
+            params["parse_mode"] = "HTML"
+        try:
+            api("sendMessage", **params)
+        except Exception:
+            # A stray < or & in a draft must not swallow her post.
+            api("sendMessage", chat_id=chat_id, text=chunk,
+                disable_web_page_preview=True)
+
+
+def _chunks(text, limit=TELEGRAM_LIMIT):
+    out, current = [], ""
+    for para in text.split("\n\n"):
+        if len(current) + len(para) + 2 > limit:
+            if current:
+                out.append(current.strip())
+            while len(para) > limit:
+                out.append(para[:limit])
+                para = para[limit:]
+            current = para + "\n\n"
+        else:
+            current += para + "\n\n"
+    if current.strip():
+        out.append(current.strip())
+    return out or [text[:limit]]
+
+
+def code(text):
+    """Monospace block - what she long-presses to copy in one tap."""
+    return "<pre>" + html.escape(text) + "</pre>"
+
+
+# --- access -----------------------------------------------------------------
+
+def allowed(user_id):
+    raw = (os.environ.get("ALLOWED_USER_IDS") or "").strip()
+    if not raw:
+        return True          # first run: the bot prints ids so she can fill it
+    ids = {p.strip() for p in raw.split(",") if p.strip()}
+    return str(user_id) in ids
+
+
+# --- commands ---------------------------------------------------------------
+
+HELP = """What I do with what you send me.
+
+<b>Just type a note</b> - a sentence or a paragraph. I save it. Nothing is spent and nothing is drafted until you ask.
+
+<b>/draft</b> - I rank every open note, tell you which ones can become a post and why the rest cannot, then research and draft the top one.
+<b>/draft 7</b> - skip the ranking, draft note 7.
+<b>/notes</b> - the open notes.
+<b>/skip 3</b> - take note 3 out of the ranking.
+<b>/revise make it shorter, drop the second paragraph</b> - a new version.
+<b>/post</b> - print the current draft again, clean, to copy.
+<b>/approve</b> - save the final text.
+<b>/whoami</b> - your Telegram user id.
+
+I never post to LinkedIn. I hand you the text; you post it.
+I never invent a Skinstinct figure - where one is needed you will see [DATA NEEDED: ...] and it is yours to fill."""
+
+
+def cmd_notes(chat_id):
+    notes = store.open_notes()
+    if not notes:
+        send(chat_id, "No open notes. Send me one - a sentence is enough.")
+        return
+    lines = [f"<b>{len(notes)} open note(s)</b>", ""]
+    for n in notes:
+        text = n["text"].replace("\n", " ")
+        if len(text) > 160:
+            text = text[:157] + "..."
+        lines.append(f"<b>{n['id']}</b> ({n['added']}) {html.escape(text)}")
+    send(chat_id, "\n".join(lines))
+
+
+def cmd_skip(chat_id, arg):
+    try:
+        note_id = int(arg)
+    except (TypeError, ValueError):
+        send(chat_id, "Which one? /skip 3")
+        return
+    if not store.get_note(note_id):
+        send(chat_id, f"No note {note_id}.")
+        return
+    store.set_status(note_id, store.SKIPPED)
+    send(chat_id, f"Note {note_id} is out of the ranking.")
+
+
+def deliver(chat_id, draft_id, version):
+    """The draft, its voice check and its sources. Three messages on purpose:
+    the post is alone in its own block so it can be copied without the
+    commentary attached to it."""
+    raw = store.read_step(draft_id, f"03-draft-v{version}") or ""
+    post, sources = pipeline.split_post(raw)
+    check = store.read_step(draft_id, f"04-voice-check-v{version}") or ""
+    verdict, failed = pipeline.parse_verdict(check)
+
+    send(chat_id, f"<b>Draft v{version}</b>  ({pipeline.word_count(post)} words)")
+    send(chat_id, code(post))
+
+    gaps = pipeline.placeholders(post)
+    tail = [f"<b>Voice check: {verdict}</b>"]
+    if failed:
+        tail.append(f"Failed checks: {failed}")
+    if gaps:
+        tail.append("")
+        tail.append(f"<b>{len(gaps)} figure(s) I will not invent - yours to fill:</b>")
+        tail += [html.escape(g) for g in gaps]
+    if sources:
+        tail += ["", "<b>Sources</b>", html.escape(sources[:1500])]
+    tail += ["", "/revise &lt;what to change&gt;   /approve   /post"]
+    send(chat_id, "\n".join(tail))
+
+
+def cmd_draft(chat_id, arg):
+    if arg:
+        try:
+            note_id = int(arg)
+        except ValueError:
+            send(chat_id, "Which note? /draft 7, or just /draft to rank them all.")
+            return
+        note = store.get_note(note_id)
+        if not note:
+            send(chat_id, f"No note {note_id}.")
+            return
+        send(chat_id, f"Drafting note {note_id}, skipping the ranking.")
+    else:
+        notes = store.open_notes()
+        if not notes:
+            send(chat_id, "No open notes to rank. Send me one first.")
+            return
+        send(chat_id, f"Ranking {len(notes)} note(s). Nothing is drafted yet.")
+        ranking = pipeline.rank(notes)
+        rows = pipeline.parse_ranking(ranking, {n["id"] for n in notes})
+        send(chat_id, html.escape(ranking))
+
+        postable = [r for r in rows if r[1]]
+        if not rows:
+            send(chat_id, "I could not read the ranking table back. Nothing "
+                          "drafted. Try /draft &lt;number&gt; to pick one yourself.")
+            return
+        if not postable:
+            send(chat_id, "None of these clears the bar yet. Nothing drafted, "
+                          "nothing spent. /draft &lt;number&gt; overrides me.")
+            return
+        note = store.get_note(postable[0][0])
+        send(chat_id, f"Taking note {note['id']}. /draft &lt;number&gt; if you "
+                      f"wanted a different one.")
+
+    draft_id, version = pipeline.run_note(note, progress=lambda m: send(chat_id, m))
+    store.set_current(chat_id, draft_id, version)
+    deliver(chat_id, draft_id, version)
+
+
+def cmd_revise(chat_id, instruction):
+    current = store.get_current(chat_id)
+    if not current:
+        send(chat_id, "No draft open. /draft first.")
+        return
+    if not instruction.strip():
+        send(chat_id, "Tell me what to change: /revise cut the third paragraph")
+        return
+    version = pipeline.run_revision(current["draft_id"], current["version"],
+                                    instruction,
+                                    progress=lambda m: send(chat_id, m))
+    store.set_current(chat_id, current["draft_id"], version)
+    deliver(chat_id, current["draft_id"], version)
+
+
+def cmd_post(chat_id):
+    current = store.get_current(chat_id)
+    if not current:
+        send(chat_id, "No draft open. /draft first.")
+        return
+    raw = store.read_step(current["draft_id"], f"03-draft-v{current['version']}") or ""
+    post, _ = pipeline.split_post(raw)
+    send(chat_id, code(post))
+
+
+def cmd_approve(chat_id):
+    current = store.get_current(chat_id)
+    if not current:
+        send(chat_id, "No draft open. /draft first.")
+        return
+    draft_id, version = current["draft_id"], current["version"]
+    raw = store.read_step(draft_id, f"03-draft-v{version}") or ""
+    post, sources = pipeline.split_post(raw)
+    gaps = pipeline.placeholders(post)
+    store.save_step(draft_id, "APPROVED", (
+        f"# Approved {time.strftime('%Y-%m-%d %H:%M')}\n\n"
+        f"From draft v{version}.\n\n## Post\n\n{post}\n\n## Sources\n\n{sources}\n"))
+    msg = [f"Saved to data/drafts/{draft_id}/APPROVED.md",
+           "", "Paste it into LinkedIn yourself - I do not post."]
+    if gaps:
+        msg.insert(1, f"Careful: {len(gaps)} [DATA NEEDED] placeholder(s) are "
+                      f"still in it.")
+    send(chat_id, "\n".join(msg))
+
+
+# --- dispatch ---------------------------------------------------------------
+
+def handle(message):
+    chat_id = message["chat"]["id"]
+    user = message.get("from", {})
+    text = (message.get("text") or "").strip()
+    if not text:
+        send(chat_id, "Text only for now - I cannot read photos or voice notes.")
+        return
+
+    if not allowed(user.get("id")):
+        send(chat_id, "Not an allowed user.")
+        print(f"rejected user {user.get('id')} ({user.get('username')})")
+        return
+
+    command, _, arg = text.partition(" ")
+    command = command.lower().lstrip("/") if text.startswith("/") else ""
+    arg = arg.strip()
+
+    if command in ("start", "help"):
+        send(chat_id, HELP)
+    elif command == "whoami":
+        send(chat_id, f"Your Telegram user id is <b>{user.get('id')}</b>. Put it "
+                      f"in ALLOWED_USER_IDS in .env and restart me.")
+    elif command == "notes":
+        cmd_notes(chat_id)
+    elif command == "skip":
+        cmd_skip(chat_id, arg)
+    elif command == "draft":
+        cmd_draft(chat_id, arg)
+    elif command == "revise":
+        cmd_revise(chat_id, arg)
+    elif command == "post":
+        cmd_post(chat_id)
+    elif command == "approve":
+        cmd_approve(chat_id)
+    elif command:
+        send(chat_id, f"I do not know /{html.escape(command)}. /help")
+    else:
+        note = store.add_note(text, chat_id)
+        open_count = len(store.open_notes())
+        send(chat_id, f"Noted as <b>{note['id']}</b>. {open_count} open. "
+                      f"/draft when you want one written.")
+
+
+# --- the loop ---------------------------------------------------------------
+
+_busy = set()
+_busy_lock = threading.Lock()
+
+
+def handle_in_thread(message):
+    """A run takes minutes. Polling has to keep going, or a note she sends
+    meanwhile is answered ten minutes late. One run at a time per chat."""
+    chat_id = message["chat"]["id"]
+    with _busy_lock:
+        if chat_id in _busy:
+            send(chat_id, "Still working on the last one. One at a time.")
+            return
+        _busy.add(chat_id)
+
+    def work():
+        try:
+            handle(message)
+        except ModelError as e:
+            send(chat_id, f"The model call failed: {html.escape(str(e))[:500]}")
+        except Exception as e:  # noqa: BLE001 - the loop must not die
+            traceback.print_exc()
+            send(chat_id, f"Something broke: {html.escape(type(e).__name__)}: "
+                          f"{html.escape(str(e))[:300]}")
+        finally:
+            with _busy_lock:
+                _busy.discard(chat_id)
+
+    threading.Thread(target=work, daemon=True).start()
+
+
+def main():
+    load_env()
+    if not os.environ.get("TELEGRAM_BOT_TOKEN"):
+        raise SystemExit("TELEGRAM_BOT_TOKEN is not set. Copy .env.example to "
+                         ".env and paste the token from @BotFather.")
+    if not os.environ.get("GEMINI_API_KEY"):
+        print("! GEMINI_API_KEY is not set - notes will save, /draft will fail.")
+
+    me = api("getMe")
+    print(f"@{me.get('username')} is listening. Window: "
+          f"{pipeline.window_months()} months. Ctrl-C to stop.")
+    if not (os.environ.get("ALLOWED_USER_IDS") or "").strip():
+        print("! ALLOWED_USER_IDS is empty - anyone who finds the bot can use "
+              "your API key. Send /whoami and fill it in.")
+
+    offset = None
+    while True:
+        try:
+            updates = api("getUpdates", timeout=POLL_TIMEOUT, offset=offset,
+                          allowed_updates=["message"])
+        except KeyboardInterrupt:
+            raise
+        except Exception as e:  # noqa: BLE001 - a dropped connection is normal
+            print(f"poll failed: {e}")
+            time.sleep(5)
+            continue
+
+        for update in updates or []:
+            offset = update["update_id"] + 1
+            message = update.get("message")
+            if message:
+                print(f"< {message.get('from', {}).get('username')}: "
+                      f"{(message.get('text') or '')[:80]}")
+                handle_in_thread(message)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nstopped.")
