@@ -298,7 +298,7 @@ def handle(message):
 
     if not allowed(user.get("id")):
         send(chat_id, "Not an allowed user.")
-        print(f"rejected user {user.get('id')} ({user.get('username')})")
+        print(f"rejected user {user.get('id')} ({user.get('username')})", flush=True)
         return
 
     command, _, arg = text.partition(" ")
@@ -369,14 +369,14 @@ def main():
         raise SystemExit("TELEGRAM_BOT_TOKEN is not set. Copy .env.example to "
                          ".env and paste the token from @BotFather.")
     if not os.environ.get("GEMINI_API_KEY"):
-        print("! GEMINI_API_KEY is not set - notes will save, /draft will fail.")
+        print("! GEMINI_API_KEY is not set - notes will save, /draft will fail.", flush=True)
 
     me = api("getMe")
     print(f"@{me.get('username')} is listening. Window: "
-          f"{pipeline.window_months()} months. Ctrl-C to stop.")
+          f"{pipeline.window_months()} months. Ctrl-C to stop.", flush=True)
     if not (os.environ.get("ALLOWED_USER_IDS") or "").strip():
         print("! ALLOWED_USER_IDS is empty - anyone who finds the bot can use "
-              "your API key. Send /whoami and fill it in.")
+              "your API key. Send /whoami and fill it in.", flush=True)
 
     offset = None
     while True:
@@ -386,7 +386,7 @@ def main():
         except KeyboardInterrupt:
             raise
         except Exception as e:  # noqa: BLE001 - a dropped connection is normal
-            print(f"poll failed: {e}")
+            print(f"poll failed: {e}", flush=True)
             time.sleep(5)
             continue
 
@@ -395,7 +395,7 @@ def main():
             message = update.get("message")
             if message:
                 print(f"< {message.get('from', {}).get('username')}: "
-                      f"{(message.get('text') or '')[:80]}")
+                      f"{(message.get('text') or '')[:80]}", flush=True)
                 handle_in_thread(message)
 
 
@@ -403,4 +403,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\nstopped.")
+        print("\nstopped.", flush=True)
