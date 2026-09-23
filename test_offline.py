@@ -260,6 +260,14 @@ def test_verdict_parser():
     check("an unreadable check counts as FAIL, not PASS",
           pipeline.parse_verdict("the model rambled")[0] == "FAIL")
 
+    rows = pipeline.failed_checks(CHECK_OUTPUT)
+    check("a failed number arrives with what it means, not bare",
+          rows == [(6, "sources load", "example.com/gone is DEAD")], str(rows))
+    check("passing rows are not reported as failures",
+          all(n != 1 for n, _, _ in rows))
+    check("nothing failed reads back as nothing",
+          pipeline.failed_checks("| 1 | anything | YES | fine |") == [])
+
 
 def test_post_split():
     print("\ndraft splitting")

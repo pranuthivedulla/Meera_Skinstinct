@@ -222,6 +222,28 @@ def parse_verdict(text):
     return ("FAIL" if verdict == "UNREADABLE" else verdict), failed
 
 
+_CHECK_ROW = re.compile(
+    r"^\s*\|\s*(\d{1,2})\s*\|([^|]+)\|\s*(YES|NO)\s*\|([^|]*)\|",
+    re.I | re.M)
+
+
+def failed_checks(text):
+    """[(number, question, evidence)] for every row that answered NO.
+
+    Read back out of the checker's own table rather than from a list kept
+    here. A hardcoded number -> meaning map would go stale the first time a
+    question is added, and then a failure would be explained as the wrong
+    thing - worse than a bare number."""
+    out = []
+    for m in _CHECK_ROW.finditer(text):
+        if m.group(3).upper() != "NO":
+            continue
+        question = " ".join(m.group(2).split()).strip()
+        evidence = " ".join(m.group(4).split()).strip()
+        out.append((int(m.group(1)), question, evidence))
+    return out
+
+
 def split_post(text):
     """The post body alone, for pasting. Falls back to the whole output rather
     than losing her draft to a missing heading."""

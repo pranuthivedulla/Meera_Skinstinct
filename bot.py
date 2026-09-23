@@ -213,8 +213,20 @@ def deliver(chat_id, draft_id, version):
 
     gaps = pipeline.placeholders(post)
     tail = [f"<b>Voice check: {verdict}</b>"]
-    if failed:
-        tail.append(f"Failed checks: {failed}")
+    rows = pipeline.failed_checks(check)
+    if rows:
+        # A bare "failed checks: 6, 9" makes her go and look up what 6 is.
+        # Say what each number means, in the checker's own words.
+        tail.append(f"{len(rows)} of 17 checks failed:")
+        for number, question, evidence in rows:
+            tail.append("")
+            tail.append(f"<b>{number}.</b> {html.escape(question)}")
+            if evidence:
+                tail.append(f"    ↳ {html.escape(evidence[:300])}")
+    elif failed:
+        # The verdict named failures but the table could not be read back.
+        tail.append(f"Failed checks: {failed} (could not read the table for "
+                    f"what they mean - open 04-voice-check-v{version}.md)")
     if gaps:
         tail.append("")
         tail.append(f"<b>{len(gaps)} figure(s) I will not invent - yours to fill:</b>")
