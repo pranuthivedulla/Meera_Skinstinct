@@ -7,3 +7,11 @@ __pycache__/
 # Her writing, not this project's code - kept local rather than republished
 # through this repo. The bot needs it; git does not.
 corpus/
+
+# Previous runs, moved aside before a clean demo run.
+_archive/
+
+# Screenshots and photos dropped into the folder while working.
+*.jpeg
+*.jpg
+*.png
