@@ -39,6 +39,7 @@ from pathlib import Path
 import pipeline
 import store
 import style
+import verify
 from gemini import ModelError
 
 ROOT = Path(__file__).resolve().parent
@@ -214,6 +215,18 @@ def deliver(chat_id, draft_id, version):
 
     gaps = pipeline.placeholders(post)
     tail = []
+
+    # Blockers first, above everything. A dead citation or a date no source
+    # carries is fabrication, and she should see it before she reads the post.
+    link_report = store.read_step(draft_id, "02a-link-check") or ""
+    _, dead, dates = verify.report(post, sources, link_report)
+    if dead or dates:
+        tail.append("<b>DO NOT POST YET</b>")
+        for url, why in dead:
+            tail.append(f"  cites a source that does not exist: {html.escape(url[:90])}")
+        for phrase, why in dates:
+            tail.append(f"  says \"{html.escape(phrase)}\" but {html.escape(why)}")
+        tail.append("")
 
     # Measured, not judged: her own published posts set the range.
     off = style.failures(post)

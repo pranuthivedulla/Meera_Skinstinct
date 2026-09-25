@@ -75,7 +75,8 @@ python test_offline.py
 2a LINK CHECK    every cited URL fetched for real                               no model call
 3  DRAFT         her voice, spending the research                               no search
 3a STYLE         counted against her published posts             mechanical, no model call
-4  VOICE CHECK   18 yes/no questions: her checklist, hook, dates, style       no search
+3b CITATIONS     the draft's sources against the link check      mechanical, no model call
+4  VOICE CHECK   19 yes/no questions: her checklist, hook, dates, style, cites no search
 5  REVISE        only what she asked to change, then re-checked                 no search
 ```
 
@@ -114,6 +115,16 @@ against her 1.4-4.3%), more long words, fewer short flat sentences. `style.py`
 counts those on every draft, computing her range from `corpus/linkedin/` at
 runtime so the target moves as she publishes. Her own posts pass it; that is
 the control.
+
+**The citation check is mechanical because the prompt kept losing.** Two
+failures survived three revisions of the same draft, and both were caused by
+instructions added to the drafting prompt. "Open on the industry hook" pulled
+the draft onto the most newsworthy fact in the research, whose source returned
+404. "Make the recency visible" produced "Research from August 2026 shows..."
+over a source page dated 2023-08-01 - not a missing caveat, an asserted date
+the source does not carry. `verify.py` decides both by comparing the draft's
+own SOURCES table against the link check, and the bot puts DO NOT POST YET
+above the draft. A sentence in a prompt lost that argument three times.
 
 **The link check is a measurement, and it outranks the research.** The research
 step reports its own sources; this step opens them. A claim whose only source
@@ -175,7 +186,8 @@ prompts/            one file per step
 voice/              her voice specification, 15 published pieces distilled
 data/               notes.json, state.json, drafts/ — gitignored, never committed
 style.py            register measured against her own posts, no model call
-test_offline.py     92 checks, every model call stubbed
+verify.py           dead citations and unsupported dates, no model call
+test_offline.py     106 checks, every model call stubbed
 ```
 
 Every step of every draft is written to disk as it completes, so when a draft

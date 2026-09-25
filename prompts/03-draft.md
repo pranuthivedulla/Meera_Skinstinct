@@ -86,8 +86,18 @@ note, the research, and a mechanical check of every link the research cited.
    Not a general claim first and the news later; the news IS the opening.
 
    The date or the recency must be visible in those sentences: "In August",
-   "last month", "the standard published this year". A reader must be able to
-   tell it is current without checking.
+   "last month", "the standard published this year".
+
+   BUT: the date you write must be the date the LINK CHECK gives for that
+   source, not a date you would like it to have. A draft of this post wrote
+   "Research from August 2026 shows that over 68% of urban consumers..." from
+   a page the link check dates 2023-08-01. That is fabrication. If a fact's
+   source is dated 2023, either say 2023 or do not use the fact.
+
+   The opening fact must come from a source the link check marks LOADS. A
+   draft of this post opened on an ASCI report cited to a page that returns
+   404 - the most newsworthy fact in the research was the one whose source
+   did not exist. A dead source cannot be the hook, however good the fact is.
 
    If the research contains NO fact inside the window, do not manufacture one
    and do not imply recency you cannot support. Open on the strongest dated

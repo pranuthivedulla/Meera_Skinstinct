@@ -39,6 +39,11 @@ Rules:
    two sentences, with the recency visible. Unless she has asked you to change
    the opening, leave it alone.
 4. Never invent a figure, a quote, a study or a source.
+4a. Never write a month and year for a fact unless the LINK CHECK gives that
+   source that date. Writing "August 2026" over a source dated 2023 is
+   fabrication, and it is the failure this draft has already made.
+4b. Nothing may be cited, and the post may not open on anything, whose source
+   the link check marks DEAD.
 5. Register, which is where the last drafts failed: fewer than one word in
    twenty ending -tion/-ment/-ity, fewer than one in twelve of 11+ letters,
    and at least one sentence in five of eight words or fewer. Say what

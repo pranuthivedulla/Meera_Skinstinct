@@ -32,6 +32,7 @@ store.STATE_FILE = TMP / "state.json"
 
 import feeds  # noqa: E402
 import style  # noqa: E402
+import verify  # noqa: E402
 import gemini  # noqa: E402
 import links  # noqa: E402
 import pipeline  # noqa: E402
@@ -172,7 +173,7 @@ def test_prompts_fill():
         "02-research.md": {"NOTE": "x", "FEEDS": "f"},
         "03-draft.md": {"VOICE": "v", "NOTE": "n", "RESEARCH": "r", "LINKCHECK": "l"},
         "04-voice-check.md": {"VOICE": "v", "DRAFT": "d", "LINKCHECK": "l",
-                              "STYLE": "s"},
+                              "STYLE": "s", "VERIFY": "c"},
         "05-revise.md": {"VOICE": "v", "NOTE": "n", "RESEARCH": "r",
                          "LINKCHECK": "l", "DRAFT": "d", "INSTRUCTION": "i"},
     }
@@ -313,7 +314,8 @@ def test_full_run():
     draft_id, version = pipeline.run_note(note)
     d = store.draft_dir(draft_id)
     for name in ("note", "01a-feed", "02-research", "02a-link-check",
-                 "03-draft-v1", "03a-style-v1", "04-voice-check-v1"):
+                 "03-draft-v1", "03a-style-v1", "03b-citations-v1",
+                 "04-voice-check-v1"):
         check(f"{name}.md written", (d / f"{name}.md").exists())
     check("exactly three model calls: research, draft, check", len(CALLS) == 3,
           str(len(CALLS)))
@@ -398,6 +400,56 @@ def test_style_measurement():
           any(k == "words" and v == "TOO HIGH" for k, _, _, _, v in rows))
     check("no corpus means no invented range",
           style.bands() is not None)
+    thin = "The pH drifts. It does not work. The cream is thin. We saw it. " * 12
+    off = [label for label, *_ in style.failures(thin)]
+    check("prose stripped too plain is caught too, not just too corporate",
+          any("11 letters" in l for l in off), str(off))
+
+
+LINK_REPORT = """# Link check (mechanical, no model call)
+
+| Link | HTTP | Result | Date on the page | Note |
+|---|---|---|---|---|
+| https://example.com/gone | 404 | DEAD | - | page does not exist |
+| https://example.com/standard | 200 | LOADS | 2023-08-01 |  |
+| https://example.com/slow | TimeoutError | BLOCKED | - | timed out |
+"""
+
+
+def test_citation_check():
+    print("\ncitation check (mechanical)")
+    rows = verify.parse_link_report(LINK_REPORT)
+    check("the link report is read back", len(rows) == 3, str(len(rows)))
+    check("a dead row is recognised",
+          any(r["state"] == "DEAD" for r in rows))
+    check("the page's own date is kept",
+          any(r["date"] == "2023-08-01" for r in rows))
+
+    sources = "| a sentence | https://example.com/gone | 2026-08-01 |"
+    dead = verify.dead_citations(sources, rows)
+    check("citing a 404 is caught", len(dead) == 1, str(dead))
+    check("citing a live page is not flagged",
+          verify.dead_citations("https://example.com/standard", rows) == [])
+    check("a BLOCKED source is not called dead - it may well exist",
+          verify.dead_citations("https://example.com/slow", rows) == [])
+
+    bad = verify.unsupported_dates(
+        "Research from August 2026 shows that over 68% of consumers.", rows)
+    check("a date no source carries is caught", len(bad) == 1, str(bad))
+    ok = verify.unsupported_dates("An August 2023 study found 68%.", rows)
+    check("a date a source does carry is accepted", ok == [], str(ok))
+    check("a bare year is not flagged - it is usually a projection",
+          verify.unsupported_dates("worth $590 billion by 2030", rows) == [])
+
+    text, dead, dates = verify.report(
+        "In August 2026 the regulator said so.",
+        "https://example.com/gone", LINK_REPORT)
+    check("the report names both blockers", len(dead) == 1 and len(dates) == 1)
+    check("it says not to post", "DO NOT POST" in text)
+    clean, d2, dt2 = verify.report("An August 2023 study found 68%.",
+                                   "https://example.com/standard", LINK_REPORT)
+    check("a clean draft reports zero blockers",
+          "BLOCKERS: 0" in clean and not d2 and not dt2)
 
 
 def test_voice_notes():
@@ -464,6 +516,7 @@ if __name__ == "__main__":
         test_full_run()
         test_bot_surface()
         test_style_measurement()
+        test_citation_check()
         test_voice_notes()
         test_no_linkedin_posting()
     finally:

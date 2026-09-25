@@ -81,8 +81,11 @@ def word_target():
 
 
 # A metric she should not exceed, versus one she should not fall below.
+# long_pct is BOTH: v4 of the note-5 draft cut long words to 0.7% against her
+# 3.7-8.3%, and read thin. Her writing is precise, not simple - "minimum
+# effective concentration" is her, "thermodynamic substantiation" is not.
 _CEILING = {"abstract_pct", "long_pct", "avg_sentence"}
-_FLOOR = {"short_pct"}
+_FLOOR = {"short_pct", "long_pct"}
 
 _LABEL = {
     "avg_sentence": "average sentence, in words",
@@ -108,6 +111,8 @@ def compare(text):
         if key in _CEILING and value > high * 1.1:
             verdict = "TOO HIGH"
         elif key in _FLOOR and value < low * 0.9:
+            verdict = "TOO LOW"
+        elif key in _FLOOR and key in _CEILING and value < low * 0.9:
             verdict = "TOO LOW"
         elif key == "words":
             # Length is her explicit instruction, so it is held exactly - no

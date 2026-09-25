@@ -29,6 +29,7 @@ import feeds
 import links
 import store
 import style
+import verify
 from gemini import call_model
 
 ROOT = Path(__file__).resolve().parent
@@ -208,13 +209,23 @@ def style_report(draft_text):
     return style.report(post)
 
 
-def voice_check(draft_text, link_report, style_text):
+def citation_check(draft_text, link_report):
+    """Mechanical. Compares the draft's own SOURCES table against the link
+    check: a cited page that 404s, and a month-and-year asserted that no
+    fetched source carries. Both are fabrication, both are decidable by
+    counting, and both survived three attempts to fix them in the prompt."""
+    post, sources = split_post(draft_text)
+    text, dead, dates = verify.report(post, sources, link_report)
+    return text, dead, dates
+
+
+def voice_check(draft_text, link_report, style_text, verify_text):
     """Separate call, no search, and it is handed the draft only - not the
     prompt that produced it. A grader sharing the writer's instructions shares
     its blind spots."""
     text, _ = call_model(_prompt("04-voice-check.md", VOICE=voice(),
                                  DRAFT=draft_text, LINKCHECK=link_report,
-                                 STYLE=style_text),
+                                 STYLE=style_text, VERIFY=verify_text),
                          search=False)
     return text
 
@@ -311,8 +322,13 @@ def run_note(note, progress=lambda msg: None, score_row=None):
     style_text = style_report(draft_text)
     store.save_step(draft_id, "03a-style-v1", style_text)
 
+    verify_text, dead, dates = citation_check(draft_text, link_report)
+    store.save_step(draft_id, "03b-citations-v1", verify_text)
+    if dead or dates:
+        progress(f"{len(dead) + len(dates)} citation blocker(s) found")
+
     progress("checking it against her voice ...")
-    check_text = voice_check(draft_text, link_report, style_text)
+    check_text = voice_check(draft_text, link_report, style_text, verify_text)
     store.save_step(draft_id, "04-voice-check-v1", check_text)
 
     store.set_status(note["id"], store.DRAFTED)
@@ -333,7 +349,10 @@ def run_revision(draft_id, version, instruction, progress=lambda msg: None):
     style_text = style_report(new_text)
     store.save_step(draft_id, f"03a-style-v{new_version}", style_text)
 
+    verify_text, _, _ = citation_check(new_text, link_report)
+    store.save_step(draft_id, f"03b-citations-v{new_version}", verify_text)
+
     progress("re-checking the voice ...")
-    check_text = voice_check(new_text, link_report, style_text)
+    check_text = voice_check(new_text, link_report, style_text, verify_text)
     store.save_step(draft_id, f"04-voice-check-v{new_version}", check_text)
     return new_version

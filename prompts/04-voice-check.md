@@ -22,13 +22,17 @@ why in the evidence column.
 
 {STYLE}
 
+=== CITATION CHECK (mechanical, the draft's sources against the link check) ===
+
+{VERIFY}
+
 This measurement is counting, not opinion. Where it disagrees with your own
 impression of the draft, the measurement is right. Question 18 is decided by
 it alone.
 
-Questions 16, 17 and 18 are hers, added 23 September 2026, and are not in
-the voice specification above. 18 is answered from the measurement, not from
-reading. Check them the same way: YES or NO, with evidence.
+Questions 16 to 19 are hers, added 23-25 September 2026, and are not in the
+voice specification above. 18 and 19 are answered from the measurements, not
+from reading. Where a measurement disagrees with your impression, it wins. Check them the same way: YES or NO, with evidence.
 
 Output EXACTLY this:
 
@@ -54,6 +58,7 @@ Output EXACTLY this:
 | 16 | Do the first two sentences open on a CURRENT, DATED industry fact, with the recency visible in the text? | | quote the first two sentences and name the date |
 | 17 | Is every dated figure inside the research window, or is its age stated in the sentence that uses it? | | name any that is not |
 | 18 | Does the style measurement show every metric in range? | | copy the OUT OF RANGE line, or say every measure is in range |
+| 19 | Does the citation check show zero blockers? | | copy the BLOCKERS line |
 
 ## Verdict
 
