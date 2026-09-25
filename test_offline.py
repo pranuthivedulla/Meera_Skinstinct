@@ -433,23 +433,37 @@ def test_citation_check():
     check("a BLOCKED source is not called dead - it may well exist",
           verify.dead_citations("https://example.com/slow", rows) == [])
 
-    bad = verify.unsupported_dates(
-        "Research from August 2026 shows that over 68% of consumers.", rows)
-    check("a date no source carries is caught", len(bad) == 1, str(bad))
     ok = verify.unsupported_dates("An August 2023 study found 68%.", rows)
     check("a date a source does carry is accepted", ok == [], str(ok))
     check("a bare year is not flagged - it is usually a projection",
           verify.unsupported_dates("worth $590 billion by 2030", rows) == [])
 
-    text, dead, dates = verify.report(
-        "In August 2026 the regulator said so.",
-        "https://example.com/gone", LINK_REPORT)
-    check("the report names both blockers", len(dead) == 1 and len(dates) == 1)
+    # Every page opened, none carries the date -> the date is contradicted.
+    all_open = [r for r in rows if r["state"] == "LOADS" and r["date"]]
+    hard = verify.unsupported_dates("Research from August 2026 shows 68%.", all_open)
+    check("a date contradicted by pages that all opened is a BLOCKER",
+          [d[2] for d in hard] == ["BLOCKER"], str(hard))
+
+    # A cited page would not open, so its date is unknown, so the claim
+    # cannot be called fabricated. This was a real false alarm: a genuine
+    # 2026-08-02 study cited through a doi.org redirect the checker marks
+    # BLOCKED.
+    soft = verify.unsupported_dates("In August 2026 a study found 43%.", rows)
+    check("a date behind an unopenable source is UNVERIFIED, not a blocker",
+          [d[2] for d in soft] == ["UNVERIFIED"], str(soft))
+
+    text, dead, h, sf = verify.report("In August 2026 the regulator said so.",
+                                      "https://example.com/gone", LINK_REPORT)
+    check("a dead citation is still a blocker", len(dead) == 1)
     check("it says not to post", "DO NOT POST" in text)
-    clean, d2, dt2 = verify.report("An August 2023 study found 68%.",
-                                   "https://example.com/standard", LINK_REPORT)
+    clean, d2, h2, s2 = verify.report("An August 2023 study found 68%.",
+                                      "https://example.com/standard", LINK_REPORT)
     check("a clean draft reports zero blockers",
-          "BLOCKERS: 0" in clean and not d2 and not dt2)
+          "BLOCKERS: 0" in clean and not d2 and not h2)
+    check("an unverified date alone does not say DO NOT POST",
+          "DO NOT POST" not in verify.report(
+              "In August 2026 a study found 43%.",
+              "https://example.com/standard", LINK_REPORT)[0])
 
 
 def test_voice_notes():

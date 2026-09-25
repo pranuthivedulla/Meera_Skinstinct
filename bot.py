@@ -219,13 +219,20 @@ def deliver(chat_id, draft_id, version):
     # Blockers first, above everything. A dead citation or a date no source
     # carries is fabrication, and she should see it before she reads the post.
     link_report = store.read_step(draft_id, "02a-link-check") or ""
-    _, dead, dates = verify.report(post, sources, link_report)
-    if dead or dates:
+    _, dead, hard_dates, soft_dates = verify.report(post, sources, link_report)
+    if dead or hard_dates:
         tail.append("<b>DO NOT POST YET</b>")
         for url, why in dead:
             tail.append(f"  cites a source that does not exist: {html.escape(url[:90])}")
-        for phrase, why in dates:
+        for phrase, why, _ in hard_dates:
             tail.append(f"  says \"{html.escape(phrase)}\" but {html.escape(why)}")
+        tail.append("")
+    if soft_dates:
+        # Not a blocker. A source that refused an automated request may well
+        # be real, and calling that fabrication would be its own error.
+        tail.append("<b>Check these yourself</b>")
+        for phrase, why, _ in soft_dates:
+            tail.append(f"  \"{html.escape(phrase)}\" - {html.escape(why[:150])}")
         tail.append("")
 
     # Measured, not judged: her own published posts set the range.

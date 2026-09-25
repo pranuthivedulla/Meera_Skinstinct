@@ -84,16 +84,25 @@ def source_months(link_rows):
 
 
 def unsupported_dates(post, link_rows):
-    """[(phrase, why)] for a month and year asserted in the post that no
-    fetched source carries.
+    """[(phrase, why, severity)] for a month and year asserted in the post
+    that no fetched source carries.
+
+    Severity matters, and getting it wrong once already cost a false alarm. A
+    rehearsal draft cited a real study dated 2026-08-02 through a doi.org
+    link, which the link check marks BLOCKED because the redirect refuses an
+    automated request. No date was fetched, so a true date looked unbacked.
+
+    BLOCKER    every cited page opened, and none of them carries this date.
+               The date is contradicted by what was actually fetched.
+    UNVERIFIED at least one cited page could not be opened, so its date is
+               unknown. The claim may well be right; it could not be checked
+               from here, and she should open the link.
 
     Only month+year is checked. A bare year is often a projection - "$590
-    billion by 2030" is a forecast, not a claim about when something was
-    published - and flagging those would bury the real thing."""
+    billion by 2030" is a forecast, not a publication date - and flagging
+    those would bury the real thing."""
     have = source_months(link_rows)
-    if not have:
-        # Nothing was fetched with a date, so every asserted date is unbacked.
-        have = set()
+    unopened = any(r["state"] != "LOADS" or not r["date"] for r in link_rows)
     out, seen = [], set()
     for m in _MONTH_YEAR.finditer(post or ""):
         phrase = m.group(0)
@@ -103,10 +112,18 @@ def unsupported_dates(post, link_rows):
         seen.add(key)
         month = MONTHS.index(m.group(1).lower()) + 1
         year = int(m.group(2))
-        if (month, year) not in have:
-            dates = ", ".join(f"{y}-{mo:02d}" for mo, y in sorted(have, key=lambda p: (p[1], p[0]))) or "none"
+        if (month, year) in have:
+            continue
+        dates = ", ".join(f"{y}-{mo:02d}" for mo, y in
+                          sorted(have, key=lambda p: (p[1], p[0]))) or "none"
+        if unopened:
+            out.append((phrase, f"could not be checked - a cited page would not "
+                                f"open, so its date is unknown. Open it yourself "
+                                f"(the pages that did open carry: {dates})",
+                        "UNVERIFIED"))
+        else:
             out.append((phrase, f"no fetched source is dated {phrase} "
-                                f"(the pages carry: {dates})"))
+                                f"(the pages carry: {dates})", "BLOCKER"))
     return out
 
 
@@ -122,11 +139,16 @@ def report(post, sources_table, link_report_md):
         lines += ["No link check was available, so nothing could be checked.", ""]
     lines.append("## Sources cited that do not exist")
     lines += ([f"- {url} - {why}" for url, why in dead] or ["None."])
+    hard = [d for d in dates if d[2] == "BLOCKER"]
+    soft = [d for d in dates if d[2] != "BLOCKER"]
     lines += ["", "## Dates asserted that no source supports"]
-    lines += ([f"- \"{phrase}\" - {why}" for phrase, why in dates] or ["None."])
-    lines += ["", f"BLOCKERS: {len(dead) + len(dates)}"]
-    if dead or dates:
+    lines += ([f"- \"{phrase}\" - {why}" for phrase, why, _ in hard] or ["None."])
+    lines += ["", "## Dates that could not be checked"]
+    lines += ([f"- \"{phrase}\" - {why}" for phrase, why, _ in soft] or ["None."])
+    lines += ["", f"BLOCKERS: {len(dead) + len(hard)}",
+              f"UNVERIFIED: {len(soft)}"]
+    if dead or hard:
         lines.append("DO NOT POST until these are fixed. A dead citation and a "
                      "date the source does not carry are both fabrication, "
                      "whatever else is right about the draft.")
-    return "\n".join(lines) + "\n", dead, dates
+    return "\n".join(lines) + "\n", dead, hard, soft

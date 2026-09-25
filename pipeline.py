@@ -215,8 +215,8 @@ def citation_check(draft_text, link_report):
     fetched source carries. Both are fabrication, both are decidable by
     counting, and both survived three attempts to fix them in the prompt."""
     post, sources = split_post(draft_text)
-    text, dead, dates = verify.report(post, sources, link_report)
-    return text, dead, dates
+    text, dead, hard_dates, soft_dates = verify.report(post, sources, link_report)
+    return text, dead, hard_dates, soft_dates
 
 
 def voice_check(draft_text, link_report, style_text, verify_text):
@@ -322,10 +322,12 @@ def run_note(note, progress=lambda msg: None, score_row=None):
     style_text = style_report(draft_text)
     store.save_step(draft_id, "03a-style-v1", style_text)
 
-    verify_text, dead, dates = citation_check(draft_text, link_report)
+    verify_text, dead, hard_dates, soft = citation_check(draft_text, link_report)
     store.save_step(draft_id, "03b-citations-v1", verify_text)
-    if dead or dates:
-        progress(f"{len(dead) + len(dates)} citation blocker(s) found")
+    if dead or hard_dates:
+        progress(f"{len(dead) + len(hard_dates)} citation blocker(s) found")
+    elif soft:
+        progress(f"{len(soft)} date(s) could not be checked - a source would not open")
 
     progress("checking it against her voice ...")
     check_text = voice_check(draft_text, link_report, style_text, verify_text)
@@ -349,7 +351,7 @@ def run_revision(draft_id, version, instruction, progress=lambda msg: None):
     style_text = style_report(new_text)
     store.save_step(draft_id, f"03a-style-v{new_version}", style_text)
 
-    verify_text, _, _ = citation_check(new_text, link_report)
+    verify_text, _, _, _ = citation_check(new_text, link_report)
     store.save_step(draft_id, f"03b-citations-v{new_version}", verify_text)
 
     progress("re-checking the voice ...")
